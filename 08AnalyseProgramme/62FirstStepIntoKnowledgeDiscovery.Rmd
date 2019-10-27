@@ -1,0 +1,338 @@
+---
+title: "First Step(s) into Knowledge Discovery"
+author: "Michael Thrun"
+date: "17 10 2019"
+output: 
+  ioslides_presentation:
+    smaller: true
+---
+
+<style>
+  slides > slide {
+  overflow-x: auto !important;
+  overflow-y: auto !important;
+  }
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+inpath='C:/Subversion/PRO/MCT/ForecastingElectricityPrice2019/09Originale'
+outpath='C:/Subversion/PRO/MCT/ForecastingElectricityPrice2019/01Transformierte'
+require(DataVisualizations) #CRAN
+require(lubridate) #CRAN
+require(data.table) #CRAN
+require(TSAT)#github, mthrun
+#install with devtools (CRAN)
+```
+
+## 1. Reading Structured Dataset
+- Not Shown:
+    - Acquiring data with the assumption: time series have in the same row the same time
+    - Generating Structured dataset which is human-readable but also usable in any programming language
+	- Making sure that time series are equally spaced
+	- Time series are in the same time resolution (regular time series) 
+
+```{r,message=FALSE,warning=FALSE}
+V = TSAT::ReadDates('ScandinavianElectricityPrices.csv', InDirectory = inpath)
+DF = as.data.frame(V)
+#transform to R object defining the time
+FullTime = strptime(paste(as.character(DF$Time), DF$Hours), '%Y-%m-%d %H', tz = 'UTC')
+#splite time ffrom data an make sure that data is numeric
+Data = as.matrix(DF[, -c(1, 2)])
+mode(Data) = "numeric"
+```
+## 1.1 Data Quality Check - Missing Values
+- Check for missing values
+
+   => One variable is deleted ("LV")
+```{r}
+DataVisualizations::PlotMissingvalues(Data)
+```
+
+## 1.2 Data Quality Check - Expected Range
+- Range of data is not as expected (negative prices!) but domain expert is unavailable
+
+  => Two variables are disregarded ("DK1" "DK2")
+  
+```{r}
+Data = Data[, -16]#LV
+apply(Data, 2, range, na.rm = T)
+Data = Data[, -c(7, 8)]#"DK1" "DK2"
+```
+
+## 2.1 First Look into Patterns
+- x-axis: Time per hour as index
+- y-axis: names of variables
+- All values in same interval of 0-100 with some outliers above
+```{r}
+DataVisualizations::Pixelmatrix(Data)
+FullTime[1]
+FullTime[20000]
+FullTime[50000]
+```
+
+## 2.2 Interpretation of the Pixelmatrix
+- SE1, SE2, SE3 show the same patterns => probable directly correlated without any lag
+    - Same is true for Molde and Trheim
+
+- There is a small period with high values (2013), followed by a longer time period with low values (~2015) and then one with high values (~2018)
+
+  => Its possible that cyclic component in the range of years exists
+
+- Note, decomposition model can have the patterns: Trend, Cyclical component, seasonality, irregular component
+    
+  => Discuss with domain expert!
+
+```{r}
+DataVisualizations::Pixelmatrix(Data)
+```
+
+## 2.3 Imputation of Missing Values - Code
+- Is there a small amount of non finite values left?
+```{r}
+apply(Data,2,
+  FUN = function(x)
+    return(sum(!is.finite(x)))
+)
+ind = which(!is.finite(Data[, 'SYS']))
+#Data[ind,]
+FullTime[ind]
+#Forward Fill
+Data[ind, ] = Data[ind - 1, ]
+```
+
+## 2.4 Imputation of Missing Values - Interpretation
+- Strange behavior of missing values
+- Without prior knowledge we assume that price is given until a new price is set (Forward Filling)
+- In general, imputation is a complex task, e.g. for LV feature
+- Sometimes outliers have to be disregarded, or replaced, e.g. "DK1" "DK2"
+
+  => To be discussed with domain expert!
+
+## 3 Data Wrangling and Preprocessing
+- Takes always some time and in time series its often challenging
+- Due to time limitation we restrict the first step in KD to the target variable "Sys"
+    - see comments in header of dataset (printed above)
+- For forecasting, we assume that the trend is the average of the last week (168) hours.
+- Look into the details at home
+
+## 3.1 Exemplary Preprocessing 
+
+- Prepare Trend for whole data but make sure to only use past data for present trend
+    - Trend is the moving average of the last 168 values
+- Restructure_Split() transforms each element in a list from a vector to a data-frame
+
+```{r}
+Target = Data[, 'SYS']
+#right side of window is the last point in time
+#meaning that the mean is only computed backwards
+#important for later foracasting
+Trend = RcppRoll::roll_mean(Target, 168, align = "right")
+Trend = c(rep(Trend[1], length(Target) - length(Trend)), Trend)
+#plot(Target,type='l')
+#points(Trend,type='l',col='red')
+# For Saisonanlity split into training and test data
+# Do not investigate Test Data!
+# Reason: In reality test data is not available at the point
+# of forecasting
+year = lubridate::year(FullTime)
+start = min(which(year == 2018))
+Target = Data[1:(start - 1), 'SYS']
+TargetDetrended = Target - Trend[1:(start - 1)]
+Restructure_Split = function(Liste) {
+  #Function transforms each element in a list from a vector to a dataframe
+  #implicit assumption: regular time series, time series is sorted
+  return(lapply(Liste, function(x) {
+    hours = 1:25
+    n = length(x)
+    x = t(as.matrix(x))
+    colnames(x) = hours[1:n]
+    DF = as.data.frame(x)
+    return(DF)
+  }))
+}
+```
+
+## 3.2 Compute Weekly Seasonality 
+- It seems, I forgot the winter/summer clock change!
+
+```{r}
+#split time series into seven time series, one per day
+#week starts on monday
+days = lubridate::wday(FullTime, week_start = 1)
+#on element per day
+SysPerDay = c()
+for (i in 1:7) {
+  #a week has 7 days
+  ind_mo = which(days == i)
+  wTime = FullTime[ind_mo]
+  wData = TargetDetrended[ind_mo]
+  Time = cut(wTime, breaks = "days")
+  wSYS = split(x = wData, f = Time, drop = T)
+  wSYS_df = Restructure_Split(wSYS)
+  #dataframes can be combined according to names of features
+  #if features does not exist, nan are imputed
+  SysPerDay[[i]] = data.table::rbindlist(l = wSYS_df, fill = TRUE)
+}
+# number of days w.r.t to specific weekdays
+# number of hours in the weekdays
+sapply(SysPerDay, dim)
+```
+
+## 3.3 Visualize Weekly Seasonality
+- Plotly can be used for interactive visualizations
+- It should also preferred to really look (and zoom!) into the time series you investigate (not shown in this presentation)
+
+```{r}
+AverageWeek = unlist(lapply(SysPerDay, function(x)
+  apply(x, 2, median, na.rm = T)))
+
+p <- plotly::plot_ly()
+p <-
+  plotly::add_lines(
+    p,
+    x = 1:length(AverageWeek),
+    y = ~ AverageWeek + mean(Trend),
+    name = 'Mondays'
+  )
+p <-  plotly::layout(
+  p,
+  title = '"Sys" Variable Seasonality Pattern: Week',
+  xaxis = list(title = 'Mo-So in Hours'),
+  yaxis = list(title = 'Euro/MWh',
+               showgrid = FALSE)
+)
+```
+
+## 3.4 Weekly Seasonality 
+- In hourly resolution the pattern is clearly visible 
+- Does the domain expert expect this behavior?
+
+-> Needs discussion
+
+```{r}
+p
+```
+
+## 3.5 Stability of Seasonality
+- Again a little bit of data wrangling (-> home work) results in density plot
+```{r,message=F,warning=F}
+X = c()#hours
+Y = c()#price
+#restructe data to two vectors
+for (i in 1:7) {
+  x = SysPerDay[[i]]
+  x$Id = 1:nrow(x)
+  dfmweek = reshape2::melt(x, id = "Id")
+  dfmweek$variable = as.numeric(as.character(dfmweek$variable))
+  #hours are consecutive from 1..168 representing a week
+  X = c(X, dfmweek$variable + (i - 1) * 24)#
+  Y = c(Y, dfmweek$value)
+}
+#pareto density estimations
+out = DataVisualizations::PDEscatter(
+  X,
+  Y,
+  na.rm = T,
+  ylim = c(min(Y, na.rm = T), 65),
+  PlotIt = FALSE,
+  xlab = 'Mo-So in Hours',
+  ylab = "Euro/MWh",
+  main = 'Density Estimation of Seasonality Pattern',
+  DrawTopView = FALSE,
+  Plotter = 'plotly'
+)
+
+
+```
+
+## 3.6 Seasonality Pattern Still Visible in Density Plot
+- Two dimensions are hours and electricity prices 
+- Third dimension (z-axis) the density (probability of the weekly seasonality)
+
+```{r}
+#restricting range to relevant part
+plotly::layout(out$Handle, scene = list(yaxis = list(range = c(0, 12))))
+```
+
+## 3.7 Excurs: Building Simple Decomposition Model
+- Model= Trend + Weekly-Seasonality
+    - Trend: moving average of last 168 hours
+    - Seasonality is restricted to the average weekly pattern
+    
+=> Very simple model!
+    
+-> Code details are homework
+
+```{r}
+n = floor(nrow(Data) / 168)
+weekdays = c(rep(1, 24),
+             rep(2, 24),
+             rep(3, 24),
+             rep(4, 24),
+             rep(5, 24),
+             rep(6, 24),
+             rep(7, 24))
+DF_AverageWeek = data.frame(
+  AverageWeekPrice = AverageWeek[1:168],
+  FullHours = 1:168,
+  HourOfDay = rep(0:23, 7),
+  DayOfWeek = weekdays
+)
+days = lubridate::wday(FullTime, week_start = 1)
+hours = lubridate::hour(FullTime)
+startingpoint = which(DF_AverageWeek$DayOfWeek == days[1] &
+                        DF_AverageWeek$HourOfDay == hours[1])
+SeasonTooLong = c(DF_AverageWeek$AverageWeekPrice[startingpoint:168],
+                  rep(DF_AverageWeek$AverageWeekPrice, n))
+DecompositionModel_simple = Trend + SeasonTooLong[1:length(Trend)]
+```
+
+## 3.8 Excurs: Verifying Model
+- We expect that this model does not perform that well because residuals are not normally distributed
+
+=> There is still information left in the residuals
+
+```{r}
+plot(
+  FullTime[169:(168 * 2)],
+  Data[169:(168 * 2), 'SYS'],
+  type = 'l',
+  xlab = 'Time',
+  main = 'Data (black), Decomposition model (red)',
+  ylab = 'Price'
+)
+points(FullTime[169:(168 * 2)],
+       DecompositionModel_simple[169:(168 * 2)],
+       type = 'l',
+       col = 'red')
+# residuum should be normally distributed
+DataVisualizations::InspectVariable(Data[,'SYS']-DecompositionModel_simple,N = 'residuals',xlim = c(-20,20))
+```
+
+## 4. Conclusion
+- "Exploratory data analysis is detective work" [Tukey, 1977, p.2].
+- "As all detective stories remind us, many of the circumstances surrounding a crime are accidental or misleading. Equally, many of the indications to be discerned in bodies of data are accidental or misleading [Tukey, 1977, p.3]." 
+
+=> Play the role of the detective
+
+=> Use many different approaches of knowledge discovery
+
+=> Believe the visualizations/statistic only if several approaches yield the same result
+
+=> We implicitly have now a "simple" decomposition model in forecasting with a weekly seasonality pattern!
+
+=> The simple model will serve as baseline
+
+## Supplementary Information: Saving Data
+```{r}
+setwd(outpath)
+Season = SeasonTooLong[1:length(Trend)]
+save(file = 'PreparedDataAndWeeklySaisonality.rda',
+     DF_AverageWeek,
+     Data,
+     FullTime,
+     DecompositionModel_simple,
+     Trend,
+     Season)
+```

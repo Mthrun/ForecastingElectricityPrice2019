@@ -1,0 +1,12 @@
+https://www.nordpoolgroup.com/historical-market-data/
+
+sys - system price - it disregards physical capacity limitations between nordic bitting areas while the capacity limitations in/oput nordic are considered. 
+the system price for each hour is based on the intersection of the aggregated supply and demand curves representing
+all bids and offers in the enitre nordic market.
+it is the main reference for traded long term financial contracts
+
+NO: OSLO, KR.Sand,Bergen, TR.Heim, MOLDE, TROMSO
+SE: 1-4
+DFK 1-2
+EE: EE und ELE
+
