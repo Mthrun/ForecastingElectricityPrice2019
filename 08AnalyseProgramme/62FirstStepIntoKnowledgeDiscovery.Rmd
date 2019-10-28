@@ -16,12 +16,13 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-inpath='C:/Subversion/PRO/MCT/ForecastingElectricityPrice2019/09Originale'
-outpath='C:/Subversion/PRO/MCT/ForecastingElectricityPrice2019/01Transformierte'
+inpath='D:/Subversion/PRO/MCT/ForecastingElectricityPrice2019/09Originale'
+outpath='D:/Subversion/PRO/MCT/ForecastingElectricityPrice2019/01Transformierte'
 require(DataVisualizations) #CRAN
 require(lubridate) #CRAN
 require(data.table) #CRAN
 require(TSAT)#github, mthrun
+require(RcppRoll)
 #install with devtools (CRAN)
 ```
 
