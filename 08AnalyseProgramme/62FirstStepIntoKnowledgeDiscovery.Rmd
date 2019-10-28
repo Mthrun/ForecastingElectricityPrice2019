@@ -21,9 +21,10 @@ outpath='D:/Subversion/PRO/MCT/ForecastingElectricityPrice2019/01Transformierte'
 require(DataVisualizations) #CRAN
 require(lubridate) #CRAN
 require(data.table) #CRAN
-require(TSAT)#github, mthrun
-require(RcppRoll)
+require(RcppRoll) #CRAN
+
 #install with devtools (CRAN)
+require(TSAT)#github, Mthrun
 ```
 
 ## 1. Reading Structured Dataset
