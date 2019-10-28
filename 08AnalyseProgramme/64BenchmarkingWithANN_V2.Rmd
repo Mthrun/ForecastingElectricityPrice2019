@@ -16,8 +16,8 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
-inpath='C:/Subversion/PRO/MCT/ForecastingElectricityPrice2019/01Transformierte'
-outpath='C:/Subversion/PRO/MCT/ForecastingElectricityPrice2019/02Forecasts'
+inpath='D:/Subversion/PRO/MCT/ForecastingElectricityPrice2019/01Transformierte'
+outpath='D:/Subversion/PRO/MCT/ForecastingElectricityPrice2019/02Forecasts'
 require(neuralnet)
 require(forecast)
 require(nnfor)
@@ -50,28 +50,33 @@ points(FullTime,
 
 ## 2. A Gentle Introduction Into Rolling Forecasts
 
-Handling Uncertainty:
+Usual way to handle uncertainty:
 
-- Do not make static forecasts, i.e. use whole 𝑌_𝑡 in order to build and evaluate the forecasting model 
-    - Divide into training and test set, see Knowledge Discovery lectures for overview
-- Use dynamic forecasts, i.e. out of sample forecasting: $Y_t=[y_1,...,y_f,y_{f+1},...y_{f+h}]$
+- Divide into training and test set more than once
+    - Use dynamic forecasts, i.e. out of sample forecasting: $Y_t=[y_1,...,y_f,y_{f+1},...y_{f+h}]$
+    - Forecast horizon h is set to 24 hours
+
+- Beware: Statistical large enough out-of-sample forecasting is important
+    - 365*24+1=8761 Forecasts will be generated on test data
+
+## 2.1 Cross-Validation by Rolling Forecasts
+
+Three methods used
+
+1. decomposition model of average weekly seasonality and and trend of moving average with window size of 168 hours 
+2. Naiv means that all 24 hours have the same value as the last known hour priory
+3. Ensemble: Forecasting techniques can be aggregated with the goal to balance the limitations of simpler models
+    - Here: average of Naiv and decomposition model
+    - See SI-A for usual application
+
+With three steps for each model:
 
 1. Build and evaluate model on training set $[y_1,...,y_f]$, e.g.
     - Estimate parameters
     - Investigate Residuals
     - …
 2. Evaluate forecast on test set $y_{f+1},...,y_{f+h}$
-3. Repeat 
-
-## 2.1 Cross-Validation by Rolling Forecasts
-
-- Statistical large enough out-of-sample forecasting is important
-    - 365*24+1=8761 Forecasts will be generated on test data
-- Forecast horizon is set to 24 hours
-- Naiv means that all 24 hours have the same value as the last known hour priory
-- Ensemble: Forecasting techniques can be aggregated with the goal to balance the limitations of simpler models
-    - Here: average of Naiv and decomposition model
-    - See SI-A for usual application
+3. Repeat (BUT HOW?)
         
 ## 2.2 Principle for Rolling Forecasts
 - Following code generates a named list of length 8761
@@ -79,11 +84,10 @@ Handling Uncertainty:
     - Each elements contains a data frame of the time stamps that are predicted, the test values (future) and the forecasts (predicted values based on the past and present)
     - IMPORTANT: The models never use the test set!
 
-
 ```{r, out.width = "600px",echo=FALSE}
 knitr::include_graphics("RollingForecasting.png")
 ```
-
+    
 ```{r,echo = TRUE}
 #Test Set will be 2018
 year = lubridate::year(FullTime)
